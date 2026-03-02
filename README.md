@@ -51,7 +51,7 @@ Triggers → Add Trigger
 
 * Function: `updateHomeworkDoc`
 * Event source: Time-driven
-* Hour timer → Every hour
+* Minute timer → Every minute
 
 ---
 
