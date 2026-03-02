@@ -64,4 +64,3 @@ If exposed, regenerate immediately.
 
 ## Author
 Phoenix Allen
-Created for personal Canvas workflow automation.
