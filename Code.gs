@@ -11,9 +11,16 @@ function updateHomeworkDoc() {
   const body = doc.getBody();
   body.clear();
   
+  // Remove document header if it exists
+if (doc.getHeader()) {
+  doc.getHeader().clear();
+}
+
+// Reduce top margin
+doc.setMarginTop(36); // default is 72, this cuts it in half
   let title = body.appendParagraph("Homework To-Do List");
-title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
-title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -21,53 +28,79 @@ title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
   const twoWeeks = new Date(today);
   twoWeeks.setDate(today.getDate() + 14);
 
+  let allAssignments = [];
+
   COURSE_IDS.forEach(courseId => {
 
     const courseName = getCourseName(courseId);
     const assignments = getAssignments(courseId);
 
-    const filtered = assignments.filter(a => {
+    assignments.forEach(a => {
 
-      if (!a.published) return false;
+      if (!a.published) return;
 
       const dueDate = getEffectiveDueDate(a);
-      if (!dueDate) return false;
+      if (!dueDate) return;
 
       dueDate.setHours(0,0,0,0);
 
-      if (dueDate < today) return false;
-      if (dueDate > twoWeeks) return false;
+      if (dueDate < today) return;
+      if (dueDate > twoWeeks) return;
 
       const sub = a.submission || {};
+      if (sub.submitted_at) return;
+      if (sub.graded_at) return;
+      if (sub.excused) return;
 
-      if (sub.submitted_at) return false;
-      if (sub.graded_at) return false;
-      if (sub.excused) return false;
+      allAssignments.push({
+        name: a.name,
+        course: courseName,
+        due: dueDate
+      });
 
-      return true;
     });
+  });
 
-    if (filtered.length === 0) return;
+  allAssignments.sort((a, b) => a.due - b.due);
 
-    filtered.sort((a, b) => {
-      return getEffectiveDueDate(a) - getEffectiveDueDate(b);
-    });
+  let currentCourse = null;
 
-    let courseParagraph = body.appendParagraph("\n" + courseName);
-let text = courseParagraph.editAsText();
-text.setBold(0, courseName.length - 1, true);
-text.setFontSize(0, courseName.length - 1, 15);
+  allAssignments.forEach(a => {
 
-    filtered.forEach(a => {
-      const due = getEffectiveDueDate(a).toLocaleDateString();
-      body.appendParagraph(`• ${a.name}\n   Due: ${due}\n`);
-    });
+    if (a.course !== currentCourse) {
+      currentCourse = a.course;
+
+      let courseParagraph = body.appendParagraph("\n" + currentCourse);
+      let text = courseParagraph.editAsText();
+      text.setBold(0, currentCourse.length - 1, true);
+      text.setFontSize(0, currentCourse.length - 1, 15);
+    }
+
+    const diffTime = a.due - today;
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    let daysText;
+    if (diffDays === 0) {
+      daysText = "(Due Today)";
+    } else if (diffDays === 1) {
+      daysText = "(Due in 1 day)";
+    } else {
+      daysText = `(Due in ${diffDays} days)`;
+    }
+
+    const due = a.due.toLocaleDateString();
+
+    body.appendParagraph(
+      `• ${a.name}\n   Due: ${due} ${daysText}\n`
+    );
 
   });
 
   doc.saveAndClose();
 }
 
+
+// ===== Helper Functions =====
 
 function getAssignments(courseId) {
   const url = `${CANVAS_BASE_URL}/api/v1/courses/${courseId}/assignments?include[]=submission&include[]=all_dates&per_page=100`;
