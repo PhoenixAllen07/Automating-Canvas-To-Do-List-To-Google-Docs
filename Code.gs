@@ -39,6 +39,11 @@ function updateHomeworkDoc() {
     const dueDate = new Date(item.plannable_date);
     dueDate.setHours(0,0,0,0);
 
+    if (dueDate.getHours() === 0 && dueDate.getMinutes() === 0) {
+  dueDate.setHours(23);
+  dueDate.setMinutes(59);
+}
+
     if (dueDate < today) return;
     if (dueDate > twoWeeks) return;
 
@@ -95,13 +100,31 @@ function updateHomeworkDoc() {
       daysText = `(Due in ${diffDays} days)`;
     }
 
-    const due = a.due.toLocaleDateString();
+    const datePart = a.due.toLocaleDateString([], {
+  month: 'numeric',
+  day: 'numeric',
+  year: 'numeric'
+});
+
+const timePart = a.due.toLocaleTimeString([], {
+  hour: 'numeric',
+  minute: '2-digit'
+});
+
+const due = `${datePart} @ ${timePart}`;
 
     const p = body.appendParagraph(`• ${a.name}\nDue: ${due} ${daysText}\n`);
 
-// formatting
-p.setIndentStart(7);      // moves both lines right
-p.setIndentFirstLine(0);   // bullet stays left
+// keep your indent formatting
+p.setIndentStart(9);
+p.setIndentFirstLine(0);
+
+// ensure normal text size stays 12
+p.setFontSize(12);
+
+// ONLY enlarge the bullet
+const text = p.editAsText();
+text.setFontSize(0, 0, 16);
 
   });
 
@@ -116,7 +139,7 @@ function getPlannerItems() {
 
   let items = [];
 
-  while (url) {
+  while (url) { 
 
     const response = UrlFetchApp.fetch(url, {
       headers: { "Authorization": "Bearer " + CANVAS_TOKEN }
