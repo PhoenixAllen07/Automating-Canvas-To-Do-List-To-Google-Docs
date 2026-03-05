@@ -3,22 +3,22 @@ const CANVAS_BASE_URL = "https://your-school.instructure.com";
 const CANVAS_TOKEN = "PASTE_YOUR_CANVAS_TOKEN_HERE";
 const COURSE_IDS = ["12345", "67890"]; // Replace with your course IDs
 const GOOGLE_DOC_ID = "PASTE_YOUR_GOOGLE_DOC_ID_HERE";
-// ========================
 
+// MAIN FUNCTION
 
 function updateHomeworkDoc() {
+
   const doc = DocumentApp.openById(GOOGLE_DOC_ID);
   const body = doc.getBody();
   body.clear();
-  
-  // Remove document header if it exists
-if (doc.getHeader()) {
-  doc.getHeader().clear();
-}
 
-// Reduce top margin
-doc.setMarginTop(36); // default is 72, this cuts it in half
-  let title = body.appendParagraph("Homework To-Do List");
+  if (doc.getHeader()) {
+    doc.getHeader().clear();
+  }
+
+  doc.setMarginTop(36);
+
+  const title = body.appendParagraph("Homework To-Do List");
   title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
   title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 
@@ -28,58 +28,65 @@ doc.setMarginTop(36); // default is 72, this cuts it in half
   const twoWeeks = new Date(today);
   twoWeeks.setDate(today.getDate() + 14);
 
-  let allAssignments = [];
+  const plannerItems = getPlannerItems();
 
-  COURSE_IDS.forEach(courseId => {
+  let assignments = [];
 
-    const courseName = getCourseName(courseId);
-    const assignments = getAssignments(courseId);
+  plannerItems.forEach(item => {
 
-    assignments.forEach(a => {
+    if (!item.plannable_date) return;
 
-      if (!a.published) return;
+    const dueDate = new Date(item.plannable_date);
+    dueDate.setHours(0,0,0,0);
 
-      const dueDate = getEffectiveDueDate(a);
-      if (!dueDate) return;
+    if (dueDate < today) return;
+    if (dueDate > twoWeeks) return;
 
-      dueDate.setHours(0,0,0,0);
-
-      if (dueDate < today) return;
-      if (dueDate > twoWeeks) return;
-
-      const sub = a.submission || {};
-      if (sub.submitted_at) return;
-      if (sub.graded_at) return;
-      if (sub.excused) return;
-
-      allAssignments.push({
-        name: a.name,
-        course: courseName,
-        due: dueDate
-      });
-
+    if (item.planner_override?.marked_complete === true) return;
+    if (item.submissions?.submitted === true) return;
+    if (item.plannable_type == "calendar_event") return;
+    assignments.push({
+      name: item.plannable.title,
+      course: item.course_id,
+      due: dueDate
     });
+
   });
 
-  allAssignments.sort((a, b) => a.due - b.due);
+  // Sort by due date
+  assignments.sort((a,b) => a.due - b.due);
+
+  // Cache course names
+  const courseNames = {};
+
+  assignments.forEach(a => {
+    if (!courseNames[a.course]) {
+      courseNames[a.course] = getCourseName(a.course);
+    }
+  });
 
   let currentCourse = null;
 
-  allAssignments.forEach(a => {
+  assignments.forEach(a => {
+    const courseName = courseNames[a.course];
 
-    if (a.course !== currentCourse) {
-      currentCourse = a.course;
+    if (courseName !== currentCourse) {
 
-      let courseParagraph = body.appendParagraph("\n" + currentCourse);
-      let text = courseParagraph.editAsText();
-      text.setBold(0, currentCourse.length - 1, true);
-      text.setFontSize(0, currentCourse.length - 1, 15);
+      currentCourse = courseName;
+
+      const courseParagraph = body.appendParagraph("\n" + courseName);
+      const text = courseParagraph.editAsText();
+
+      text.setBold(0, courseName.length, true);
+      text.setFontSize(0, courseName.length, 15);
+
     }
 
     const diffTime = a.due - today;
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
     let daysText;
+
     if (diffDays === 0) {
       daysText = "(Due Today)";
     } else if (diffDays === 1) {
@@ -90,36 +97,57 @@ doc.setMarginTop(36); // default is 72, this cuts it in half
 
     const due = a.due.toLocaleDateString();
 
-    body.appendParagraph(
-      `• ${a.name}\n   Due: ${due} ${daysText}\n`
-    );
+    const p = body.appendParagraph(`• ${a.name}\nDue: ${due} ${daysText}\n`);
+
+// formatting
+p.setIndentStart(7);      // moves both lines right
+p.setIndentFirstLine(0);   // bullet stays left
 
   });
 
   doc.saveAndClose();
 }
 
+// PLANNER ITEMS
 
-// ===== Helper Functions =====
+function getPlannerItems() {
 
-function getAssignments(courseId) {
-  const url = `${CANVAS_BASE_URL}/api/v1/courses/${courseId}/assignments?include[]=submission&include[]=all_dates&per_page=100`;
+  let url = `${CANVAS_BASE_URL}/api/v1/planner/items?per_page=100`;
 
-  const response = UrlFetchApp.fetch(url, {
-    headers: { "Authorization": "Bearer " + CANVAS_TOKEN }
-  });
+  let items = [];
 
-  const assignments = JSON.parse(response.getContentText());
+  while (url) {
 
-  assignments.forEach(a => {
-    if (!a.submission) a.submission = {};
-  });
+    const response = UrlFetchApp.fetch(url, {
+      headers: { "Authorization": "Bearer " + CANVAS_TOKEN }
+    });
 
-  return assignments;
+    const page = JSON.parse(response.getContentText());
+    items = items.concat(page);
+
+    const linkHeader = response.getHeaders()['Link'];
+
+    if (linkHeader && linkHeader.includes('rel="next"')) {
+
+      const match = linkHeader.match(/<([^>]+)>; rel="next"/);
+      url = match ? match[1] : null;
+
+    } else {
+
+      url = null;
+
+    }
+
+  }
+  
+
+  return items;
 }
 
+// COURSE NAME
 
 function getCourseName(courseId) {
+
   const url = `${CANVAS_BASE_URL}/api/v1/courses/${courseId}`;
 
   const response = UrlFetchApp.fetch(url, {
@@ -127,19 +155,6 @@ function getCourseName(courseId) {
   });
 
   const course = JSON.parse(response.getContentText());
+
   return course.name;
-}
-
-
-function getEffectiveDueDate(assignment) {
-  if (assignment.due_at) {
-    return new Date(assignment.due_at);
-  }
-
-  if (assignment.all_dates && assignment.all_dates.length > 0) {
-    const dateObj = assignment.all_dates.find(d => d.due_at);
-    if (dateObj) return new Date(dateObj.due_at);
-  }
-
-  return null;
 }
