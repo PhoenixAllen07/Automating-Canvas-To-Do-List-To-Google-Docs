@@ -51,7 +51,7 @@ function updateHomeworkDoc() {
     if (item.submissions?.submitted === true) return;
     if (item.plannable_type == "calendar_event") return;
     assignments.push({
-      name: item.plannable.title,
+      name: item.plannable.title.replace(/\s+/g, ' ').trim(),
       course: item.course_id,
       due: dueDate
     });
