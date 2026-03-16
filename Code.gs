@@ -36,6 +36,10 @@ function updateHomeworkDoc() {
 
     if (!item.plannable_date) return;
 
+  // Skip announcements/resources
+  if (!item.course_id) return; // items with no course
+  if (item.plannable_type === "announcement" || item.plannable_type === "resource") return;
+
     const dueDate = new Date(item.plannable_date);
     dueDate.setHours(0,0,0,0);
 
